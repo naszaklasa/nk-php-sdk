@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="nk-php-sdk" basedir="." default="test">
+
+  <property name="workspace" value="${application.startdir}" />
+  <property name="result" value="${workspace}/results" />
+  <property name="basedir" value="/var/lib/jenkins-shared/tools"/>
+  
+  <target name="build" depends="clean,test,analysis,doc" />
+
+  <target name="clean">
+    <delete dir="${result}/logs"/>
+    <delete dir="${result}/doc"/>
+    <delete dir="${result}/coverage"/>
+    <delete dir="${result}"/>
+  </target>
+
+  <target name="test" depends="test.lint,test.unit" />
+
+  <target name="test.lint">
+    <phplint>
+      <fileset dir=".">
+        <include name="**/*.php"/>
+      </fileset>
+    </phplint>
+  </target>
+  
+  <target name="test.unit">
+    <mkdir dir="${result}/logs"/>
+    <exec command="phpunit -d display_errors=on --bootstrap ${workspace}/src/NK.php --log-junit=${result}/logs/phpunit.xml ${workspace}/tests" logoutput="true" escape="true"/>
+  </target>
+
+  <target name="analysis" depends="php.coverage,php.phpmd,php.phpcpd,php.phpcs" />
+
+  <target name="php.coverage">
+    <mkdir dir="${result}/coverage"/>
+    <exec command="phpunit --bootstrap ${workspace}/src/NK.php --coverage-html=${result}/coverage --coverage-clover=${result}/logs/testcoverage.xml ${workspace}/tests" logoutput="false" escape="true"/>
+  </target>
+
+  <target name="php.phpmd">
+    <mkdir dir="${result}/logs"/>
+    <phpmd rulesets="${basedir}/phpmd/codesize.xml,${basedir}/phpmd/design.xml,${basedir}/phpmd/naming.xml,${basedir}/phpmd/unusedcode.xml">
+      <fileset dir=".">
+        <include name="src/*.php"/>
+        <exclude name="src/OAuth.php"/>
+      </fileset>
+      <formatter type="xml" outfile="${result}/logs/pmd.xml"/>
+    </phpmd>
+  </target>
+
+  <target name="php.phpcpd">
+    <mkdir dir="${result}/logs"/>
+    <phpcpd minLines="4" minTokens="10">
+      <fileset dir=".">
+        <include name="src/*.php"/>
+        <exclude name="src/OAuth.php"/>
+      </fileset>
+      <formatter type="default" useFile="false" outfile="/dev/null"/>
+      <formatter type="pmd" outfile="${result}/logs/pmd-cpd.xml"/>
+    </phpcpd>
+  </target>
+
+  <target name="php.phpcs">
+    <mkdir dir="${result}/logs"/>
+    <phpcodesniffer
+      standard="${basedir}/phpcs/Nk/ruleset.xml"
+      showSniffs="true"
+      showWarnings="false">
+      <fileset dir=".">
+        <include name="src/*.php"/>
+        <exclude name="src/OAuth.php"/>
+      </fileset>
+      <formatter type="default"/>
+      <formatter type="checkstyle" outfile="${result}/logs/checkstyle.xml"/>
+    </phpcodesniffer>
+  </target>
+
+  <target name="doc">
+    <phpdoc
+      title="php-nk-sdk Documentation"
+      destdir="${result}/doc"
+      sourcecode="true"
+      output="HTML:Smarty:PHP"
+      quiet="true">
+      <fileset dir=".">
+         <include name="src/*.php"/>
+         <exclude name="src/OAuth.php"/>
+      </fileset>
+      <projdocfileset dir=".">
+        <include name="LICENSE" />
+      </projdocfileset>
+    </phpdoc>
+  </target>
+
+</project>
