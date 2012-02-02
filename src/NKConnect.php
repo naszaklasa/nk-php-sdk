@@ -60,6 +60,10 @@ class NKConnectUnusableException extends NKException
  */
 class NKConnect extends NKAuthentication
 {
+  const MODE_WINDOW = 1;
+  const MODE_POPUP = 2;
+
+  private $errors = array();
   private $http_request;
 
   /**
@@ -109,6 +113,11 @@ class NKConnect extends NKAuthentication
     return $this->http_request;
   }
 
+  protected function getHttpClient()
+  {
+    return new NKHttpClient();
+  }
+
   /**
    * Zwraca komunikat błędu jeśli wystąpił problem lub null jeśli błędu nie ma. Metoda powinna być wywołana w callbacku
    * aby obsłużyć niepoprawne żądania
@@ -117,19 +126,22 @@ class NKConnect extends NKAuthentication
    */
   public function getError()
   {
-    $request_data = $this->getHttpRequest()->getRequestData();
-
-    if (isset($request_data['nkconnect_error']) && '' <> trim($request_data['nkconnect_error'])) {
-      return urldecode($request_data['nkconnect_error']);
-    }
-    return null;
+    return (0 <> count($this->errors) ? implode(', ', $this->errors) : null);
   }
 
   /**
-   * Metoda służąca do obsługi mechanizmu callback'a. Adres strony z kodem callbacka powinieneś
-   * określić w panelu administracyjnym NK. Metoda zwraca true jeśli zakończono z powodzeniem proces autentykacji. Zwróć
-   * uwagę, iż false zwracane jest podczas przejść pomiędzy stanami, i *nie oznacza* niepowodzenia autoryzacji. W przypadku
-   * niepoprawnego logowania proces kończy się w popupie wywołanym przyciskiem, callback nie jest wtedy wywoływany, w przypadku
+   * Zwraca tablicę asocjacyjną, zawierającą kody błędów wraz z ich opisami
+   *
+   * @return array|null
+   */
+  public function getErrors()
+  {
+    return (0 <> count($this->errors) ? $this->errors : null);
+  }
+
+  /**
+   * Metoda służąca do obsługi mechanizmu callback'a. Metoda zwraca true jeśli zakończono z powodzeniem proces autentykacji. Zwróć
+   * uwagę, iż false *nie oznacza* niepowodzenia. False jest zwracane również wtedy, kiedy kod callbacku nie jest wykonywany. W przypadku
    * wystąpienia błędu odmowy udostępnienia danych lub innego błędu przejścia pomiędzy stanami, błąd sygnalizuje metoda
    * getError()
    *
@@ -137,62 +149,76 @@ class NKConnect extends NKAuthentication
    */
   public function handleCallback()
   {
-    $auth_state = $this->authState();
-    $result = false;
+    $req = $this->getHttpRequest();
+    $req_data = $req->getRequestData();
 
-    if (1 === $auth_state || (0 === $auth_state && null === $this->getError() && '' <> $this->getConfig()->callback_url && false !== strpos($this->getMyUrl(), $this->getConfig()->callback_url))) {
-      $this->handleJsToken();
-    } elseif (2 === $auth_state) {
-      $this->handleJsTokenRegistration();
-    } elseif (3 === $auth_state && $this->tokenAvailable()) {
-      $result = true;
-    } elseif ($auth_state < 0) {
-      $this->handleLogout();
+    if (true === isset($req_data['nkconnect_state']) && $req_data['nkconnect_state'] == 'callback') {
+
+      if (false === isset($req_data['state']) || $req_data['state'] <> $this->getOtp()) {
+        $this->errors['invalid_otp'] = 'invalid OTP';
+        return false;
+      }
+
+      if (true === isset($req_data['error'])) {
+        $this->errors[$req_data['error']] = isset($req_data['error_description']) ? $req_data['error_description'] : $req_data['error'];
+        return false;
+      }
+
+      if (false === isset($req_data['code']) || strlen($req_data['code']) < 1) {
+        $this->errors['code_missing'] = 'Missing auth code';
+        return false;
+      }
+
+      $http_client = $this->getHttpClient();
+
+      $url = "https://nk.pl/oauth2/token";
+      $params = array(
+        "redirect_uri" => $this->redirectUri(),
+        "scope"        => implode(',', $this->getConfig()->permissions),
+        "code"         => $req_data['code'],
+        "client_id"    => $this->getConfig()->key,
+        "client_secret"=> $this->getConfig()->secret,
+        "grant_type"   => 'authorization_code'
+      );
+
+      $http_client->exec($url, array(), NKHttpClient::HTTP_POST, $params);
+
+      if (false === in_array($http_client->getResponseCode(), array(200, 400))) {
+        $this->errors['http_error'] = 'failed to exec HTTP request when exchanging code to token';
+        return false;
+      }
+
+      $data = json_decode($http_client->getResponse(), true);
+
+      if (null === $data) {
+        $this->errors['decode_error'] = 'Unable to decode response';
+        return false;
+      }
+
+      if (true == isset($data['error'])) {
+        $this->errors[$data['error']] = isset($data['error_description']) ? $data['error_description'] : $data['error'];
+        return false;
+      }
+
+      if (false === isset($data['access_token']) || false === isset($data['expires_in'])) {
+        $this->errors['auth_error'] = 'Not authenticated';
+        return false;
+      }
+
+      $req->setSessionData($this->getSessionKey('token'), $data['access_token']);
+      $req->setSessionData($this->getSessionKey('token_exp'), (time() + $data['expires_in']));
+
+      $req->unsetSessionData($this->getSessionKey('otp'));
+
+      return $this->authenticated();
+    }
+    elseif (true === isset($req_data['nkconnect_state']) && $req_data['nkconnect_state'] == 'logout') {
+
+      $this->logout();
+      return !$this->authenticated();
     }
 
-    return $result;
-  }
-
-  /**
-   * Metoda zwraca kod HTML przycisku logowania w NK ("Zaloguj się z NK") dla niezalogowanego użytkownika, dla użytkownika
-   * zalogowanego wyświetli link "Wyloguj". Jeśli nie chcesz wyświetlać linku wyświetlaj przycisk wyłącznie dla niezalogowanych
-   * użytkowników (popatrz na ->authenticated())
-   *
-   * @throws NKConfigException
-   * 
-   * @param bool $refreshable
-   * @return string
-   */
-  public function button($refreshable = false)
-  {
-    $key = trim($this->getConfig()->key);
-    if ('' == $key) {
-      throw new NKConfigException('Please provide $key in your config');
-    }
-    if (false === is_array($this->getConfig()->permissions)) {
-      throw new NKConfigException("Permissions provided by config must be an array");
-    }
-
-    if ($refreshable && $this->tokenAvailableButExpired()) {
-      $nks = <<<EOT
-<script type="text/javascript" src="http://%d.s-nk.pl/script/packs/oauth"></script>
-<script type="text/javascript">
-  nk.OAuth.try_to_get_token("%s", %s, "%s", "%s");
-</script>
-EOT;
-      $url = ('' == $this->getConfig()->callback_url ? ("\"".$this->getAuthStateUrl()."\"") : ("\"".$this->getConfig()->callback_url."\""));
-      $nks = sprintf($nks, rand(0,1), $key, $url, implode(',',$this->getConfig()->permissions), $this->getOtp());
-    } else {
-      $nks = <<<EOT
-<script type="text/javascript" src="http://%d.s-nk.pl/script/packs/oauth"></script>
-<script type="text/javascript">
-  nk.OAuth.create_button("%s", %s, "%s", "%s");
-</script>
-EOT;
-      $url = ('' == $this->getConfig()->callback_url ? ("\"".$this->getAuthStateUrl()."\"") : ("\"".$this->getConfig()->callback_url."\""));
-      $nks = sprintf($nks, rand(0, 1), $key, $url, implode(',', $this->getConfig()->permissions), $this->getOtp());
-    }
-    return $nks;
+    return false;
   }
 
   /**
@@ -204,7 +230,7 @@ EOT;
    */
   public function logoutLink()
   {
-    return $this->getAuthStateUrl(-1);
+    return $this->redirectUri('logout');
   }
 
   /**
@@ -251,62 +277,9 @@ EOT;
     return (isset($session_data[$this->getSessionKey('token')]) && isset($session_data[$this->getSessionKey('token_exp')]) && (time() > $session_data[$this->getSessionKey('token_exp')]));
   }
 
-  private function getSessionKey($key)
+  protected function getSessionKey($key)
   {
     return sprintf("nkconnect_%s_%s", $this->getConfig()->key, $key);
-  }
-
-  protected function authState()
-  {
-    $request_data = $this->getHttpRequest()->getRequestData();
-
-    if (true === isset($request_data['nkconnect_state']) && $request_data['nkconnect_state'] < 4) {
-      return (int)$request_data['nkconnect_state'];
-    }
-    return 0;
-  }
-
-  private function getMyUrl()
-  {
-    $server_data = $this->getHttpRequest()->getServerData();
-
-    $url  = (true === isset($server_data["HTTPS"]) && 'on' == $server_data["HTTPS"]) ? "https://" : "http://";
-    $url .= $server_data['HTTP_HOST'] . parse_url($server_data['REQUEST_URI'], PHP_URL_PATH);
-
-    $params = parse_url($server_data['REQUEST_URI'], PHP_URL_QUERY);
-    if ($params) {
-      $params = OAuthUtil::parse_parameters($params);
-      if (true === isset($params['nkconnect_state'])) {
-        unset($params['nkconnect_state']);
-      }
-      if (true === isset($params['nkconnect_error'])) {
-        unset($params['nkconnect_error']);
-      }
-      if (0 <> count($params)) {
-        $url .= '?' . OAuthUtil::build_http_query($params);
-      }
-    }
-
-    return $url;
-  }
-
-  private function getErrorUrl()
-  {
-    $url = $this->getMyUrl();
-    $url .= false !== strpos($url, '?') ? '&' : '?';
-    $url .= 'nkconnect_error=';
-    return $url;
-  }
-
-  private function getAuthStateUrl($state = null)
-  {
-    $url = $this->getMyUrl();
-    $state = (null !== $state ? $state : ($this->authState() + 1));
-
-    $url .= false !== strpos($url, '?') ? '&' : '?';
-    $url .= 'nkconnect_state=' . $state;
-
-    return $url;
   }
 
   private function getOtp()
@@ -323,118 +296,89 @@ EOT;
     return $session_data[$key];
   }
 
-  private function handleLogout()
+  /**
+   * Metoda zwraca kod HTML przycisku logowania w NK ("Zaloguj się z NK") dla niezalogowanego użytkownika, dla użytkownika
+   * zalogowanego wyświetli link "Wyloguj". Jeśli nie chcesz wyświetlać linku wyświetlaj przycisk wyłącznie dla niezalogowanych
+   * użytkowników (popatrz na ->authenticated())
+   *
+   * @throws NKConfigException
+   *
+   * @return string
+   */
+  public function button()
   {
-    $this->logout();
-    $this->getHttpRequest()->header("Location: " . $this->getMyUrl());
-    $this->getHttpRequest()->terminate();
+    $img  = (true === isset($server_data["HTTPS"]) && 'on' == $server_data["HTTPS"]) ? "https://" : "http://";
+    $img .= "nk.pl/img/oauth2/connect";
+
+    if (self::MODE_POPUP === $this->getConfig()->login_mode) {
+      $nks = <<<EOT
+<script type="text/javascript">
+  function NkConnectPopup() {
+    var pageURL = '{$this->nkConnectLoginUri()}';
+    var title = 'Zaloguj z NK';
+    var w = 490;
+    var h = 247;
+    var left = (screen.width/2)-(w/2);
+    var top = (screen.height/2)-(h/2);
+    var targetWin = window.open (pageURL, title, 'modal=yes, toolbar=no, location=yes, directories=no, status=no, menubar=no, scrollbars=no, resizable=no, copyhistory=no, width='+w+', height='+h+', top='+top+', left='+left);
+  }
+</script>
+EOT;
+      return $nks . sprintf('<a href="javascript:NkConnectPopup();"><img src="%s" alt="Zaloguj z NK" border="0"></a>', $img);
+    } else {
+      return sprintf('<a href="%s"><img src="%s" alt="Zaloguj z NK" border="0"></a>', $this->nkConnectLoginUri(), $img);
+    }
   }
 
-  private function handleJsTokenRegistration()
+  /**
+   * Ta metoda buduje URL przyjmujący żądania logowania użytkownika. Jeśli nie chcesz korzystać ze standardowo oferowanych
+   * tutaj elementów (->button()) możesz samodzielnie zbudować element logowania używając tej metody jako źródła adresu
+   * docelowego.
+   *
+   * @return string
+   */
+  public function nkConnectLoginUri()
   {
-    $req = $this->getHttpRequest();
+    return "https://nk.pl/oauth2/login" .
+      "?client_id=" . $this->getConfig()->key .
+      "&response_type=code" .
+      "&redirect_uri=" . OAuthUtil::urlencode_rfc3986($this->redirectUri()) .
+      "&scope=" . implode(',', $this->getConfig()->permissions) .
+      "&state=" . $this->getOtp();
+  }
 
-    $server_data = $req->getServerData();
-    $post_data = $req->getPostData();
+  private function redirectUri($state = 'callback')
+  {
+    $url  = $this->getConfig()->callback_url ? $this->getConfig()->callback_url : $this->getMyUrl();
+    $url .= false !== strpos($url, '?') ? '&' : '?';
+    $url .= "nkconnect_state=";
+    $url .= $state;
 
-    if ($server_data["REQUEST_METHOD"] == "POST" && isset($post_data['nkconnect_otp']) && $post_data['nkconnect_otp'] == $this->getOtp() && isset($post_data['nkconnect_token'])) {
-      $req->setSessionData($this->getSessionKey('token'), $post_data['nkconnect_token']);
-      $req->setSessionData($this->getSessionKey('token_exp'), (time() + NKTokenProvider::TOKEN_TTL));
-      $resp = array('result'   => true,
-                    'error'    => '',
-                    'redirect' => $this->getAuthStateUrl());
-    } else {
-      $errors = array();
-      if ($server_data["REQUEST_METHOD"] <> "POST") {
-        $errors[] = 'this is not a POST request';
+    return $url;
+  }
+
+  private function getMyUrl()
+  {
+    $server_data = $this->getHttpRequest()->getServerData();
+
+    $url  = (true === isset($server_data["HTTPS"]) && 'on' == $server_data["HTTPS"]) ? "https://" : "http://";
+    $url .= $server_data['HTTP_HOST'] . parse_url($server_data['REQUEST_URI'], PHP_URL_PATH);
+
+    $params = parse_url($server_data['REQUEST_URI'], PHP_URL_QUERY);
+    $strip = array('nkconnect_state', 'code', 'state', 'error', 'error_description');
+
+    if ($params) {
+      $p = array();
+      foreach (OAuthUtil::parse_parameters($params) as $k => $v) {
+        if (false === in_array($k, $strip)) {
+          $p[$k] = $v;
+        }
       }
-      if (!isset($post_data['nkconnect_otp'])) {
-        $errors[] = 'missing state token';
+      if (0 <> count($p)) {
+        $url .= '?' . OAuthUtil::build_http_query($p);
       }
-      if ($post_data['nkconnect_otp'] <> $this->getOtp()) {
-        $errors[] = 'state token mismatch';
-      }
-      if (!isset($post_data['nkconnect_token'])) {
-        $errors[] = 'token is missing';
-      }
-      $resp = array('result'   => false,
-                    'error'    => 'Unable to get or validate authentication state: ' . implode(', ', $errors),
-                    'redirect' => '');
     }
 
-    $req->unsetSessionData($this->getSessionKey('otp'));
-    $req->header('Content-type: application/json');
-
-    echo json_encode($resp);
-
-    $req->terminate();
-  }
-
-  private function handleJsToken()
-  {
-    $rnd = rand(0, 1);
-    $jsr = $this->getConfig()->jquery_src;
-    $sur = $this->getAuthStateUrl(2);
-    $erl = $this->getErrorUrl();
-    $nks = <<<EOT
-<html>
-  <head>
-    <script type="text/javascript" src="http://{$rnd}.s-nk.pl/script/packs/oauth"></script>
-    <script src="{$jsr}"></script>
-    <script>
-      $.extend({
-        getUrlHashVars: function(){
-          var vars = [], hash;
-          var hashes = window.location.href.slice(window.location.href.indexOf('#') + 1).split('&');
-          for(var i = 0; i < hashes.length; i++)
-          {
-            hash = hashes[i].split('=');
-            vars.push(hash[0]);
-            vars[hash[0]] = hash[1];
-          }
-          return vars;
-        },
-        getUrlHashVar: function(name){
-          return $.getUrlHashVars()[name];
-        }
-      });
-    </script>
-  </head>
-  <body>
-    <script type="text/javascript">
-      var callback = function(token, state) {
-        $.ajax({
-          type: 'POST',
-          url: '{$sur}',
-          data: {
-            nkconnect_token: token,
-            nkconnect_otp: state
-          },
-          error: function (resp) {
-            window.location = '{$erl}' + resp.error;
-          },
-          success: function (resp) {
-            if (resp.result == true && resp.redirect != '') {
-              window.location = resp.redirect;
-            }
-            else {
-              window.location = '{$erl}' + resp.error;
-            }
-          }
-        });
-      };
-      $(document).ready(function() {
-        if ($.getUrlHashVar('error')) {
-          window.location = '{$erl}' + $.getUrlHashVar('error_description');
-        }
-        nk.OAuth.is_token_available(callback);
-      });
-    </script>
-  </body>
-</html>
-EOT;
-
-    echo $nks;
-    $this->getHttpRequest()->terminate();
+    return $url;
   }
 }

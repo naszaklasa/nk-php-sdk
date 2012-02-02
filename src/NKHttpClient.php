@@ -37,33 +37,25 @@ class NKHttpClientException extends NKException
  */
 class NKHttpClient
 {
-  private $user_agent;
+  const UA = 'nk-php-sdk';
+
+  const HTTP_GET =  'GET';
+  const HTTP_POST =  'POST';
+
   private $curl;
   private $response;
   private $response_code = 0;
-
-  /**
-   *
-   * @param string $user_agent
-   */
-  public function __construct($user_agent = null)
-  {
-    $this->user_agent = $user_agent;
-  }
 
   private function initCurl()
   {
     if (null === $this->curl) {
       $this->curl = curl_init();
-
       curl_setopt($this->curl, CURLOPT_RETURNTRANSFER, true);
       curl_setopt($this->curl, CURLINFO_HEADER_OUT, true);
       curl_setopt($this->curl, CURLOPT_FAILONERROR, false);
       curl_setopt($this->curl, CURLOPT_CONNECTTIMEOUT, 5);
       curl_setopt($this->curl, CURLOPT_TIMEOUT, 5);
-      if (null !== $this->user_agent) {
-        curl_setopt($this->curl, CURLOPT_USERAGENT, $this->user_agent);
-      }
+      curl_setopt($this->curl, CURLOPT_USERAGENT, sprintf("%s: %s", self::UA, NKService::VERSION));
     }
   }
 
@@ -75,7 +67,7 @@ class NKHttpClient
    *
    * @return NKHttpClientException
    */
-  public function exec($url, array $headers)
+  public function exec($url, array $headers, $method = self::HTTP_GET, $postfields = null)
   {
     $this->response = null;
     $this->response_code = 0;
@@ -83,6 +75,10 @@ class NKHttpClient
     $this->initCurl();
 
     curl_setopt($this->curl, CURLOPT_URL, $url);
+    curl_setopt($this->curl, CURLOPT_CUSTOMREQUEST, $method);
+    if (self::HTTP_POST == $method && null !== $postfields) {
+      curl_setopt($this->curl, CURLOPT_POSTFIELDS, $postfields);
+    }
     curl_setopt($this->curl, CURLOPT_HTTPHEADER, $headers);
 
     $this->response = curl_exec($this->curl);
@@ -100,7 +96,12 @@ class NKHttpClient
    */
   public function getResponse()
   {
-    return $this->response;
+    $string = trim($this->response);
+    // Shit happens, NK wszystkie odpowiedzi poprzedza BOM'em, na którym gubi się json_decode
+    if(substr($string, 0,3) == pack("CCC",0xef,0xbb,0xbf)) {
+      $string=substr($string, 3);
+    }
+    return $string;
   }
 
   /**

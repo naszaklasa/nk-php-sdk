@@ -16,50 +16,41 @@
  * limitations under the License.
  */
 
-/*
- * Ten przykład pokazuje sposób w jaki można użyć NKConnect do logowania bez potrzeby używania dodatkowej strony
- * obsługującej callback. Dla nie zalogowanego użytkownika wyświetlamy przycisk "Zaloguj z NK" który otworzy popup
- * logowania w portalu NK i poprosi użytkownika o akceptację dostępu do danych. To rozwiązanie minimalistyczne dla
- * implementacji nie wymagających obsługi dodatkowej logiki. Po zalogowaniu uruchamiana jest sesja, dzięki czemu na
- * dowolnej stronie, poprzez użycie $auth->user() masz dostęp do informacji o zalogowanym użytkowniku.
- */
-
 // Załaduj bibliotekę NK
 require '../src/NK.php';
 
-// Konfiguracja Twojej aplikacji, wszystkie potrzebne informacje znajdziesz w panelu konfiguracyjnym aplikacji
-// Jeśli preferujesz bardziej obiektowy styl, popatrz na klasę NKConfig
-$conf = array('permissions' => NKPermissions::profile_minimal(),
-              'key'         => 'my_key',
-              'secret'      => 'my_secret');
+/*
+ * Konfiguracja Twojej aplikacji, wszystkie potrzebne informacje znajdziesz w panelu konfiguracyjnym aplikacji
+ * Jeśli preferujesz bardziej obiektowy styl, popatrz na klasę NKConfig
+ */
+$conf = array('permissions' => array(NKPermissions::BASIC_PROFILE),
+              'key'         => 'demo',
+              'secret'      => 'b27d8aa6-74ee-4bbc-9ea1-0a3e5acc9bb8');
 
-// Zanim rozpoczniesz renderowanie HTMLa utwórz obiekt NKConnect i pozwól mu obsłużyć na tej proces
-// logowania (actAsCallback). Jeśli chcesz lub musisz obsłużyć callback na osobnej stronie lub połączyć
-// rejestrację/własną bazę użytkowników popatrz na przykład z pliku authentication2.php
+/*
+ * Zanim rozpoczniesz renderowanie HTMLa utwórz obiekt NKConnect i pozwól mu obsłużyć na tej proces
+ * logowania (handleCallback). Jeśli chcesz lub musisz obsłużyć callback na osobnej stronie, zaimplementować jakąś logikę
+ * wykonywaną w momencie zalogowania w NK lub połączyć rejestrację/własną bazę użytkowników popatrz na przykład z pliku
+ * authentication2.php
+ */
 $auth = new NKConnect($conf);
-if ($auth->handleCallback()) {
-
-  // Ten kod zostanie wykonany w momencie pomyślnego zakończenia procesu autentykacji
-  $msg = "<p style='color: green;'><strong>Zalogowałeś się</strong></p>";
-}
-elseif($auth->getError()) {
-
-  // Ten kod zostanie wykonany, jeśli podczas procesu autentykacji wystąpi błąd
-  $err = htmlspecialchars($auth->getError());
-  $msg = "<p style='color: red;'><strong>Wystąpił problem: {$err}</strong></p>";
-}
+$auth->handleCallback();
 ?>
 <html>
   <head>
     <title>Demo autentykacji z użyciem NKConnect</title>
   </head>
   <body>
-    <?php echo (isset($msg) ? $msg : '') ?>
-
     <p>Ten przykład pokazuje sposób w jaki można użyć NKConnect do logowania bez potrzeby używania dodatkowej strony
-    obsługującej callback. Dla nie zalogowanego użytkownika wyświetlamy przycisk "Zaloguj z NK" który otworzy popup
-    logowania w portalu NK i poprosi użytkownika o akceptację dostępu do danych.</p>
-
+    obsługującej callback. Dla nie zalogowanego użytkownika wyświetlamy przycisk "Zaloguj z NK" który otworzy stronę
+    logowania w portalu NK i poprosi użytkownika o akceptację dostępu do danych. Po zalogowaniu uruchamiana jest sesja,
+    dzięki czemu na dowolnej stronie, poprzez użycie</p>
+    <pre>
+    $auth = new NKConnect($conf);
+    $user = $auth->user()
+    </pre>
+    <p>masz dostęp do informacji o zalogowanym użytkowniku.</p>
+    
     <?php if ($auth->authenticated()): ?>
       Jesteś zalogowany jako <?php echo htmlspecialchars($auth->user()->name()) ?>.<br />
       <img src="<?php echo $auth->user()->thumbnailUrl() ?>"  alt="Thumb"/><br />
@@ -70,6 +61,6 @@ elseif($auth->getError()) {
 
     <br />
     <br />
-    &copy;NK.pl 2011
+    &copy;NK.pl 2012
   </body>
 </html>

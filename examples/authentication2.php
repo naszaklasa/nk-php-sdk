@@ -16,13 +16,6 @@
  * limitations under the License.
  */
 
-/*
- * Ten przykład pokazuje sposób w jaki można użyć NKConnect do logowania, z użyciem osobnej strony obsługującej callback
- * wraz z integracją z istniejącą bazą danych użytkowników/rejestrowaniem nowych użytkowników. Adres strony z kodem callbacka
- * powinieneś określić w panelu administracyjnym NK. Na stronie logowania, lub dowolnych innych umieść przycisk, na stronie
- * obsługującej callback umieść kod podobny do tego, który znajdziesz w przykładzie authentication2callback.php
- */
-
 // Załaduj wspólny plik konfiguracji
 require 'authentication2config.php';
 
@@ -44,18 +37,36 @@ if ($auth->authenticated()) {
   <body>
     <p>Ten przykład pokazuje sposób w jaki można użyć NKConnect do logowania, z użyciem osobnej strony obsługującej callback
     wraz z integracją z istniejącą bazą danych użytkowników/rejestrowaniem nowych użytkowników. Adres strony z kodem callbacka
-    powinieneś określić w panelu administracyjnym NK. Na stronie logowania, lub dowolnych innych umieść przycisk, na stronie
-    obsługującej callback umieść kod podobny do tego, który znajdziesz w przykładzie authentication2callback.php</p>
+    powinieneś określić w konfiguracji. Na stronie logowania, lub dowolnych innych umieść przycisk, na stronie
+    obsługującej callback umieść kod podobny do tego, który znajdziesz w przykładzie authentication2callback.php
+    Po zalogowaniu uruchamiana jest sesja, dzięki czemu na dowolnej stronie, poprzez użycie</p>
+    <pre>
+    $auth = new NKConnect($conf);
+    $user = $auth->user()
+    </pre>
+    <p>masz dostęp do informacji o zalogowanym użytkowniku.</p>
 
     <?php if ($auth->authenticated()): ?>
-      Jesteś zalogowany jako <?php echo htmlspecialchars($auth->user()->name()) ?>, ostatnie logowanie <?php echo $user['last_login_2'] ?>, logowałeś się <?php echo $user['login_count'] ?> razy.<br />
+      Jesteś zalogowany jako <?php echo htmlspecialchars($auth->user()->name()) ?>, adres email <strong><?php echo htmlspecialchars($auth->user()->email()) ?></strong>
+      ostatnie logowanie <?php echo $user['last_login_2'] ?>, logowałeś się <?php echo $user['login_count'] ?> razy.<br />
       <img alt="avatar" src="<?php echo $auth->user()->thumbnailUrl() ?>" /><br />
       <a href="authentication2logout.php">Wyloguj</a>
     <?php else: ?>
       <?php echo $auth->button() ?>
     <?php endif ?>
+
+    <p><strong>Lista użytkowników:</strong></p>
+
+    <pre><?php
+    $q = $db->prepare("SELECT * FROM `users`");
+    $q->execute();
+    while ($r = $q->fetch(PDO::FETCH_ASSOC)) {
+      echo $r['nk_person_id'] . ': ' . htmlspecialchars($r['name']) . "\n";
+    }
+    ?></pre>
+
     <br />
     <br />
-    &copy;NK.pl 2011
+    &copy;NK.pl 2012
   </body>
 </html>

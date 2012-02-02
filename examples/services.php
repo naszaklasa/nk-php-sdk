@@ -25,13 +25,12 @@ require '../src/NK.php';
 
 // Konfiguracja Twojej aplikacji, wszystkie potrzebne informacje znajdziesz w panelu konfiguracyjnym aplikacji
 // Jeśli preferujesz bardziej obiektowy styl, popatrz na klasę NKConfig
-$conf = array('permissions' => array(NKPermissions::BASIC_PROFILE, NKPermissions::PICTURES_PROFILE),
-              'key'         => 'my_key',
-              'secret'      => 'my_secret');
+$conf = array('permissions' => array(NKPermissions::BASIC_PROFILE, NKPermissions::PICTURES_PROFILE, NKPermissions::EMAIL_PROFILE, NKPermissions::CREATE_SHOUTS),
+              'key'         => 'demo',
+              'secret'      => 'b27d8aa6-74ee-4bbc-9ea1-0a3e5acc9bb8');
 
 $auth = new NKConnect($conf);
 $auth->handleCallback();
-
 try {
   $service = $auth->getService();
 }
@@ -45,22 +44,29 @@ catch (NKAuthenticationUnauthorisedException $e) {
   </head>
   <body>
     <?php if ($auth->authenticated()): ?>
-      Jesteś zalogowany jako <?php echo htmlspecialchars($auth->user()->name()) ?> <img src="<?php echo $auth->user()->thumbnailUrl() ?>" />
-      <br />
-      <br />
       <span style="color: red">Uwaga!</span>
       <br />
-      Jeśli poniżej dostaniesz wyjątek braku dostępu, wyloguj się, i zaloguj ponownie, NK poprosi Cię o akceptacje nowego zestawu uprawnień.
-      <br />
-      <a href="<?php echo $auth->logoutLink() ?>">Wyloguj</a>
+      Jeśli poniżej dostaniesz wyjątek braku dostępu, wyloguj się, i zaloguj ponownie, NK poprosi Cię o akceptacje nowego zestawu uprawnień.<br />
+      <a href="<?php echo $auth->logoutLink() ?>">Wyloguj</a><br />
+      Jesteś zalogowany jako <?php echo htmlspecialchars($auth->user()->name()) ?> <img src="<?php echo $auth->user()->thumbnailUrl() ?>" /><br />
     <?php else: ?>
       <?php echo $auth->button() ?>
     <?php endif ?>
-
     <br />
-
     <?php if ($service): ?>
-      Twoje albumy:
+      <p><strong>Dodawanie wpisu na tablicy użytkownika</strong></p>
+      <?php
+      if (isset($_POST['wpis'])) {
+        if ($service->postActivity($_POST['wpis'])) {
+          echo "<p style='color: green'><strong>Dodano wpis</strong></p>";
+        }
+      }
+      ?>
+      <form action="services.php" method="POST">
+        <textarea rows="8" cols="50" name="wpis"><?php echo isset($_POST['wpis']) ? $_POST['wpis'] : 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Aliquam vitae diam ac velit aliquet mattis. Aenean sagittis eros a diam placerat sit amet molestie nisi aliquet. Proin nec eros lorem, a ultrices urna.' ?></textarea><br />
+        <input type="submit" value="Dodaj wpis" />
+      </form>
+      <strong>Twoje albumy:</strong>
       <ol>
         <?php foreach ($service->photoAlbums($auth->user()) as $album): ?>
         <li><img src="<?php echo $album->thumbnailUrl() ?>" />Album: "<?php echo htmlspecialchars($album->title()) ?>"</li>

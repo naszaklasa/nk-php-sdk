@@ -95,7 +95,7 @@ class NKService
   /**
    * Wersja nk-php-sdk
    */
-  const VERSION = '1.0';
+  const VERSION = '1.1';
 
   /**
    * Bazowy URL pod którym znajdują się serwisy wystawiane w publicznym API NK
@@ -376,12 +376,41 @@ class NKService
   }
 
   /**
+   * Dodaje na tablicy aktualnie zalogowanego użytkownika wpis o treści $content Dodatkowo możesz zawęzić widoczność
+   * wpisu wypisu wyłącznie dla znajomych użytkownika, ustawiając parametr $only_friends na true
+   *
+   * @since 1.1
+   *
+   * @param $content
+   * @param bool $only_friends
+   *
+   * @return bool
+   *
+   * @throws NKServiceInvalidParamsException
+   */
+  public function postActivity($content, $only_friends = false)
+  {
+    $length = strlen($content);
+    if ($length < 1) {
+      throw new NKServiceInvalidParamsException("Activity content is too short, it should have at least 1 char");
+    }
+    elseif ($length > 500) {
+      throw new NKServiceInvalidParamsException("Activity content is too long, it should fit in 500 chars");
+    }
+
+    $url = '/activities/@me/' . ($only_friends ? '@friends' : '@all') . '/app.sledzik';
+    $this->call($url, array('title' => $content), NKHttpClient::HTTP_POST);
+
+    return true;
+  }
+
+  /**
    * @return NKHttpClient
    */
   protected function getHttpClient()
   {
     if (null === $this->http_client) {
-      $this->http_client = new NKHttpClient("nk-php-sdk " . self::VERSION);
+      $this->http_client = new NKHttpClient();
     }
     return $this->http_client;
   }
@@ -397,33 +426,53 @@ class NKService
    * @param array $params
    * @param string $method
    *
-   * @throws NKServiceHttpException|NKServiceMissingException|NKServiceMissingPermissionException
+   * @throws NKServiceHttpException|NKServiceMissingException|NKServiceMissingPermissionException|NKServiceInvalidParamsException
    * @return array
    */
-  public function call($url, $params = array(), $method = 'GET')
+  public function call($url, $params = array(), $method = NKHttpClient::HTTP_GET)
   {
     $url = self::BASE_URL . $url;
-    $params = array_merge(array("nk_token" => $this->getTokenProvider()->getToken()), $params);
+
+    if (NKHttpClient::HTTP_GET == $method) {
+      $body = null;
+      $params = array_merge(array("nk_token" => $this->getTokenProvider()->getToken()), $params);
+      $url_params = $params;
+    }
+    elseif (NKHttpClient::HTTP_POST == $method) {
+      $body = json_encode($params);
+      $params = array(
+        "nk_token"        => $this->getTokenProvider()->getToken(),
+        "oauth_body_hash" => base64_encode(hash('sha1', $body, true))
+      );
+      $url_params = array("nk_token"=> $this->getTokenProvider()->getToken());
+    }
+    else {
+      throw new NKServiceInvalidParamsException("Unknown HTTP method to call");
+    }
 
     $request = OAuthRequest::from_consumer_and_token($this->getOAuthConsumer(), null, $method, $url, $params);
     $request->sign_request(new OAuthSignatureMethod_HMAC_SHA1(), $this->getOAuthConsumer(), null);
 
-    $url = $url . "?" . OAuthUtil::build_http_query($params);
+    $url = $url . "?" . OAuthUtil::build_http_query($url_params);
     $this->debugOutput($url);
 
-    $auth_header = $request->to_header("nk.pl");
+    $auth_header = $request->to_header();
     $this->debugOutput($auth_header);
     
     $client = $this->getHttpClient();
 
     try {
-      $client->exec($url, array("Authorization" => $auth_header));
+      $client->exec($url, array($auth_header, 'Content-Type: application/json; charset=utf8'), $method, $body);
     }
     catch (NKHttpClientException $e) {
       throw new NKServiceHttpException($e->getMessage(), $e->getCode());
     }
 
     switch ($rc = $client->getResponseCode()) {
+      case 0:
+        throw new NKServiceHttpException("No HTTP request were executed");
+        break;
+
       case 200:
         break;
 
@@ -435,7 +484,7 @@ class NKService
       case 403:
         throw new NKServiceMissingPermissionException("You need additional permissions to use this service ($rc)");
         break;
-      
+
       default:
         throw new NKServiceHttpException("Invalid response HTTP code $rc");
         break;

@@ -61,6 +61,11 @@ class NKPermissions
   const PERSON_FRIENDS_COUNT = 'PERSON_FRIENDS_COUNT_SELECTOR';
 
   /**
+   * Pozwala na dodawanie wpisów na tablicy zalogowanego użytkownika
+   */
+  const CREATE_SHOUTS        = 'CREATE_SHOUTS_ROLE';
+
+  /**
    * Zwraca zestaw uprawnień potrzebny do wyświetlenia podstawowych informacji o profilu, takich jak imię, nazwisko
    * avatar, miejscowość, etc. Zestaw powinien być użyty podczas budowania obiektu NKCongig i przypisany do propercji
    * ->permissions
@@ -102,7 +107,8 @@ class NKPermissions
       self::BIRTHDAY_PROFILE,
       self::PHONE_PROFILE,
       self::EMAIL_PROFILE,
-      self::PICTURES_PROFILE
+      self::PICTURES_PROFILE,
+      self::CREATE_SHOUTS,
     );
   }
 }

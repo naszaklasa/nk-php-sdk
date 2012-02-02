@@ -99,14 +99,13 @@ class NKConfig
   public $callback_url = '';
 
   /**
-   * Opcjonalne: URL do pliku jQuery, jeśli używasz własnej wersji możesz ją tu podać, przy czym zwróć uwagę, iż gwarantujemy
-   * poprawne działanie SDK z wersją jQuery predefiniowaną tutaj.
+   * Opcjonalne: określa sposób wyświetlania się okna logowania, NKConnect::MODE_POPUP otwiera logowanie w popupie,
+   * NKConnect::MODE_WINDOW otwiera logowanie w oknie przeglądarki. Zwróć uwagę, że każda z metod wymaga innego sposobu
+   * obsługi w pliku z callbackiem.
    *
-   * @since 1.0
-   * @optional
    * @var string
    */
-  public $jquery_src = 'http://code.jquery.com/jquery-1.6.4.min.js';
+  public $login_mode = NKConnect::MODE_WINDOW;
 
   /**
    * Ustawia opcje konfiguracyjne używając tablicy asocjacyjnej $config

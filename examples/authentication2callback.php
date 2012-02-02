@@ -61,5 +61,5 @@ if ($auth->handleCallback()) {
 elseif ($error = $auth->getError()) {
 
   // Wystąpił jakiś błąd podczas procesu autentykacji, wyświetl go lub zrób cokolwiek innego aby go obsłużyć
-  echo "<html><head></head><body><div>" . htmlspecialchars($error) . "</div></body></html>";
+  echo "<html><head></head><body><div>" . htmlspecialchars($error) . "</div><br /><a href='authentication2.php'>Wróć</a></body></html>";
 }
