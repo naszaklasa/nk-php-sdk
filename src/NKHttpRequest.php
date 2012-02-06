@@ -120,4 +120,13 @@ class NKHttpRequest
   {
     exit;
   }
+
+  /**
+   *
+   * @return int
+   */
+  public function getTime()
+  {
+    return (isset($_SERVER["REQUEST_TIME"]) ? $_SERVER["REQUEST_TIME"] : time());
+  }
 }

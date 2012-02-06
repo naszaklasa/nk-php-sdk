@@ -98,7 +98,7 @@ class NKHttpClient
   {
     $string = trim($this->response);
     // Shit happens, NK wszystkie odpowiedzi poprzedza BOM'em, na którym gubi się json_decode
-    if(substr($string, 0,3) == pack("CCC",0xef,0xbb,0xbf)) {
+    if (substr($string, 0, 3) == pack("CCC", 0xef, 0xbb, 0xbf)) {
       $string=substr($string, 3);
     }
     return $string;

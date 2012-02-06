@@ -206,13 +206,12 @@ class NKConnect extends NKAuthentication
       }
 
       $req->setSessionData($this->getSessionKey('token'), $data['access_token']);
-      $req->setSessionData($this->getSessionKey('token_exp'), (time() + $data['expires_in']));
+      $req->setSessionData($this->getSessionKey('token_exp'), ($req->getTime() + $data['expires_in']));
 
       $req->unsetSessionData($this->getSessionKey('otp'));
 
       return $this->authenticated();
-    }
-    elseif (true === isset($req_data['nkconnect_state']) && $req_data['nkconnect_state'] == 'logout') {
+    } elseif (true === isset($req_data['nkconnect_state']) && $req_data['nkconnect_state'] == 'logout') {
 
       $this->logout();
       return !$this->authenticated();
@@ -267,17 +266,21 @@ class NKConnect extends NKAuthentication
    */
   public function tokenAvailable()
   {
-    $session_data = $this->getHttpRequest()->getSessionData();
-    return (isset($session_data[$this->getSessionKey('token')]) && isset($session_data[$this->getSessionKey('token_exp')]) && (time() <= $session_data[$this->getSessionKey('token_exp')]));
+    $req = $this->getHttpRequest();
+    $session_data = $req->getSessionData();
+
+    return (isset($session_data[$this->getSessionKey('token')]) && isset($session_data[$this->getSessionKey('token_exp')]) && ($req->getTime() <= $session_data[$this->getSessionKey('token_exp')]));
   }
 
   private function tokenAvailableButExpired()
   {
-    $session_data = $this->getHttpRequest()->getSessionData();
-    return (isset($session_data[$this->getSessionKey('token')]) && isset($session_data[$this->getSessionKey('token_exp')]) && (time() > $session_data[$this->getSessionKey('token_exp')]));
+    $req = $this->getHttpRequest();
+    $session_data = $req->getSessionData();
+
+    return (isset($session_data[$this->getSessionKey('token')]) && isset($session_data[$this->getSessionKey('token_exp')]) && ($req->getTime() > $session_data[$this->getSessionKey('token_exp')]));
   }
 
-  protected function getSessionKey($key)
+  private function getSessionKey($key)
   {
     return sprintf("nkconnect_%s_%s", $this->getConfig()->key, $key);
   }
@@ -285,10 +288,11 @@ class NKConnect extends NKAuthentication
   private function getOtp()
   {
     $session_data = $this->getHttpRequest()->getSessionData();
+    $req = $this->getHttpRequest();
     $key = $this->getSessionKey('otp');
 
     if (false === isset($session_data[$key])) {
-      $otp = sha1(time().uniqid());
+      $otp = sha1($req->getTime().uniqid());
       $this->getHttpRequest()->setSessionData($key, $otp);
       return $otp;
     }

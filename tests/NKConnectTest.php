@@ -16,21 +16,26 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
    */
   protected $request;
 
+  protected $http_client;
+
   /**
    * Sets up the fixture, for example, opens a network connection.
    * This method is called before a test is executed.
    */
   protected function setUp()
   {
-    $this->request = $this->getMock('NKHttpRequest', array('terminate', 'headersSent', 'header', 'getServerData', 'getPostData', 'getRequestData', 'startSessionIfRequired', 'getSessionData', 'setSessionData', 'unsetSessionData'));
+    $this->request = $this->getMock('NKHttpRequest', array('headersSent', 'header', 'getServerData', 'getRequestData', 'startSessionIfRequired', 'getSessionData', 'setSessionData', 'unsetSessionData', 'getTime'));
     $this->request->expects($this->any())->method('headersSent')->will($this->returnValue(false));
+
+    $this->http_client = $this->getMock('NKHttpClient', array('exec', 'getResponseCode', 'getResponse'));
 
     $c = new NKConfig();
     $c->key = 'some_key';
 
-    $this->object = $this->getMock('NKConnect', array('getConfig', 'getHttpRequest'), array(), '', false);
+    $this->object = $this->getMock('NKConnect', array('getConfig', 'getHttpRequest', 'getHttpClient', 'authenticated'), array(), '', false);
     $this->object->expects($this->any())->method('getConfig')->will($this->returnValue($c));
     $this->object->expects($this->any())->method('getHttpRequest')->will($this->returnValue($this->request));
+    $this->object->expects($this->any())->method('getHttpClient')->will($this->returnValue($this->http_client));
   }
 
   /**
@@ -41,129 +46,161 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
   {
   }
 
-  /**
-   *
-   */
-  public function testHandleCallbackState1()
+  public function testHandleCallbackNoState()
   {
-    $s = array(
-      'HTTPS'       => 'on',
-      'HTTP_HOST'   => 'localhost',
-      'REQUEST_URI' => '/some/path.php?aaa=bbb'
-    );
-
-    $this->request->expects($this->any())->method('getServerData')->will($this->returnValue($s));
-    $this->request->expects($this->any())->method('getRequestData')->will($this->returnValue(array('nkconnect_state' => '1')));
-    $this->request->expects($this->once())->method('terminate');
-
-    ob_start();
-    $this->object->handleCallback();
-    $result = ob_get_clean();
-
-    $this->assertTag(array('tag' => 'head'), $result);
-    $this->assertTag(array('tag' => 'body'), $result);
-    $this->assertTag(array('tag' => 'script'), $result);
-
-    $this->assertContains('nk.OAuth.is_token_available(callback)', $result);
-    $this->assertContains('https://localhost/some/path.php?aaa=bbb&nkconnect_state=2', $result);
+    $r = array();
+    $this->request->expects($this->any())->method('getRequestData')->will($this->returnValue($r));
+    $this->assertFalse($this->object->handleCallback());
   }
 
-  /**
-   *
-   */
-  public function testHandleCallbackState2Pass()
+  public function testHandleCallbackStatePass()
   {
-    $s = array(
-      'HTTPS'         => 'on',
-      'HTTP_HOST'     => 'localhost',
-      'REQUEST_URI'   => '/some/path.php?aaa=bbb',
-      'REQUEST_METHOD'=> 'POST',
-    );
-
-    $p = array(
-      'nkconnect_otp'   => 'aaaa_bbbb',
-      'nkconnect_token' => 'token_abc'
-    );
-
-    $ss = array(
-      'nkconnect_some_key_otp' => 'aaaa_bbbb',
-    );
-
-    $this->request->expects($this->any())->method('getServerData')->will($this->returnValue($s));
-    $this->request->expects($this->any())->method('getPostData')->will($this->returnValue($p));
-    $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
-    $this->request->expects($this->any())->method('getRequestData')->will($this->returnValue(array('nkconnect_state' => '2')));
-    $this->request->expects($this->at(4))->method('setSessionData')->with('nkconnect_some_key_token', 'token_abc');
-    $this->request->expects($this->at(5))->method('setSessionData')->with('nkconnect_some_key_token_exp');
-    $this->request->expects($this->once())->method('terminate');
-
-    ob_start();
-    $this->object->handleCallback();
-    $result = ob_get_clean();
-
-    $this->assertSame('{"result":true,"error":"","redirect":"https:\/\/localhost\/some\/path.php?aaa=bbb&nkconnect_state=3"}', $result);
-  }
-
-  public function testHandleCallbackState2Fail1()
-  {
-    $s = array(
-      'HTTPS'         => 'on',
-      'HTTP_HOST'     => 'localhost',
-      'REQUEST_URI'   => '/some/path.php?aaa=bbb',
-      'REQUEST_METHOD'=> 'GET',
-    );
-
-    $p = array(
-      'nkconnect_otp'   => 'aaaa_bbbb',
-      'nkconnect_token' => 'token_abc'
-    );
-
-    $ss = array(
-      'nkconnect_some_key_otp' => 'aaaa_bbbb',
-    );
-
-    $this->request->expects($this->any())->method('getServerData')->will($this->returnValue($s));
-    $this->request->expects($this->any())->method('getPostData')->will($this->returnValue($p));
-    $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
-    $this->request->expects($this->any())->method('getRequestData')->will($this->returnValue(array('nkconnect_state' => '2')));
-    $this->request->expects($this->once())->method('terminate');
-
-    ob_start();
-    $this->object->handleCallback();
-    $result = ob_get_clean();
-
-    $this->assertContains('"result":false', $result);
-  }
-
-  public function testHandleCallbackState2Fail2()
-  {
-    $s = array(
-      'HTTPS'         => 'on',
-      'HTTP_HOST'     => 'localhost',
-      'REQUEST_URI'   => '/some/path.php?aaa=bbb',
-      'REQUEST_METHOD'=> 'POST',
-    );
-
-    $p = array(
-      'nkconnect_otp'   => 'aaaa_bbbb',
-      'nkconnect_token' => 'token_abc'
-    );
-
     $ss = array(
       'nkconnect_some_key_otp' => 'aaaa_bbbb_ccc',
     );
+    $r = array(
+      'nkconnect_state' => 'callback',
+      'state'           => 'aaaa_bbbb_ccc',
+      'code'            => 'auth_code_1234',
+    );
 
-    $this->request->expects($this->any())->method('getServerData')->will($this->returnValue($s));
-    $this->request->expects($this->any())->method('getPostData')->will($this->returnValue($p));
+    $this->request->expects($this->any())->method('getRequestData')->will($this->returnValue($r));
     $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
-    $this->request->expects($this->any())->method('getRequestData')->will($this->returnValue(array('nkconnect_state' => '2')));
-    $this->request->expects($this->once())->method('terminate');
+    $this->request->expects($this->any())->method('getTime')->will($this->returnValue(10));
 
-    ob_start();
-    $this->object->handleCallback();
-    $result = ob_get_clean();
+    $this->http_client->expects($this->once())->method('exec');
+    $this->http_client->expects($this->once())->method('getResponseCode')->will($this->returnValue(200));
+    $this->http_client->expects($this->once())->method('getResponse')->will($this->returnValue(json_encode(array('access_token' => 'access_token_1234', 'expires_in' => 60))));
 
-    $this->assertContains('"result":false', $result);
+    $this->request->expects($this->at(3))->method('setSessionData')->with('nkconnect_some_key_token', 'access_token_1234');
+    $this->request->expects($this->at(5))->method('setSessionData')->with('nkconnect_some_key_token_exp', (10+60));     // Mock time + expires_in
+
+    $this->object->expects($this->once())->method('authenticated')->will($this->returnValue(true));
+
+    $this->assertTrue($this->object->handleCallback(), $this->object->getError());
+    $this->assertSame(null, $this->object->getErrors());
+  }
+
+  public function testHandleCallbackFailOtp()
+  {
+    $ss = array(
+      'nkconnect_some_key_otp' => 'aaaa_bbbb_ccc',
+    );
+    $r = array(
+      'nkconnect_state' => 'callback',
+      'state'           => 'aaaa_bbbb_1234',
+      'code'            => 'auth_code_1234',
+    );
+
+    $this->request->expects($this->any())->method('getRequestData')->will($this->returnValue($r));
+    $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
+
+    $this->assertFalse($this->object->handleCallback());
+    $this->assertArrayHasKey('invalid_otp', $this->object->getErrors());
+  }
+
+  public function testHandleCallbackFailHasError()
+  {
+    $ss = array(
+      'nkconnect_some_key_otp' => 'aaaa_bbbb_ccc',
+    );
+    $r = array(
+      'nkconnect_state'  => 'callback',
+      'state'            => 'aaaa_bbbb_ccc',
+      'error'            => 'some_error',
+      'error_description'=> 'Some error description'
+    );
+
+    $this->request->expects($this->any())->method('getRequestData')->will($this->returnValue($r));
+    $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
+
+    $this->assertFalse($this->object->handleCallback());
+    $this->assertArrayHasKey('some_error', $this->object->getErrors());
+    $this->assertSame('Some error description', $this->object->getError());
+  }
+
+  public function testHandleCallbackFailCodeMissing()
+  {
+    $ss = array(
+      'nkconnect_some_key_otp' => 'aaaa_bbbb_ccc',
+    );
+    $r = array(
+      'nkconnect_state'  => 'callback',
+      'state'            => 'aaaa_bbbb_ccc',
+      );
+
+    $this->request->expects($this->any())->method('getRequestData')->will($this->returnValue($r));
+    $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
+
+    $this->assertFalse($this->object->handleCallback());
+    $this->assertArrayHasKey('code_missing', $this->object->getErrors());
+  }
+
+  public function testHandleCallbackFailHttpCodeUnknown()
+  {
+    $ss = array(
+      'nkconnect_some_key_otp' => 'aaaa_bbbb_ccc',
+    );
+    $r = array(
+      'nkconnect_state'  => 'callback',
+      'state'            => 'aaaa_bbbb_ccc',
+      'code'             => 'auth_code_1234',
+      );
+
+    $this->request->expects($this->any())->method('getRequestData')->will($this->returnValue($r));
+    $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
+
+    $this->http_client->expects($this->once())->method('exec');
+    $this->http_client->expects($this->once())->method('getResponseCode')->will($this->returnValue(404));
+
+
+    $this->assertFalse($this->object->handleCallback());
+    $this->assertArrayHasKey('http_error', $this->object->getErrors());
+  }
+
+  public function testHandleCallbackFailHttp400()
+  {
+    $ss = array(
+      'nkconnect_some_key_otp' => 'aaaa_bbbb_ccc',
+    );
+    $r = array(
+      'nkconnect_state'  => 'callback',
+      'state'            => 'aaaa_bbbb_ccc',
+      'code'             => 'auth_code_1234',
+      );
+
+    $this->request->expects($this->any())->method('getRequestData')->will($this->returnValue($r));
+    $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
+
+    $this->http_client->expects($this->once())->method('exec');
+    $this->http_client->expects($this->once())->method('getResponseCode')->will($this->returnValue(400));
+    $this->http_client->expects($this->once())->method('getResponse')->will($this->returnValue(json_encode(array('error' => 'some_error', 'error_description' => 'Some error description'))));
+
+    $this->assertFalse($this->object->handleCallback());
+    $this->assertArrayHasKey('some_error', $this->object->getErrors());
+    $this->assertSame('Some error description', $this->object->getError());
+  }
+
+  public function testHandleCallbackFailNoToken()
+  {
+    $ss = array(
+      'nkconnect_some_key_otp' => 'aaaa_bbbb_ccc',
+    );
+    $r = array(
+      'nkconnect_state'  => 'callback',
+      'state'            => 'aaaa_bbbb_ccc',
+      'code'             => 'auth_code_1234',
+      );
+
+    $this->request->expects($this->any())->method('getRequestData')->will($this->returnValue($r));
+    $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
+
+    $this->http_client->expects($this->once())->method('exec');
+    $this->http_client->expects($this->once())->method('getResponseCode')->will($this->returnValue(400));
+    $this->http_client->expects($this->once())->method('getResponse')->will($this->returnValue(json_encode(array())));
+
+    $this->assertFalse($this->object->handleCallback());
+    $this->assertArrayHasKey('auth_error', $this->object->getErrors());
   }
 
   /**
@@ -186,10 +223,11 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
 
     $result = $this->object->button();
 
-    $this->assertTag(array('tag' => 'script'), $result);
-    $this->assertContains('nk.OAuth.create_button', $result);
+    $this->assertTag(array('tag' => 'a'), $result);
+    $this->assertTag(array('tag' => 'img'), $result);
+
     $this->assertContains('some_key', $result);
-    $this->assertContains('https://localhost/some/path.php?aaa=bbb&nkconnect_state=1', $result);
+    $this->assertContains(rawurlencode('https://localhost/some/path.php?aaa=bbb&nkconnect_state=callback'), $result);
     $this->assertContains('aaaa_bbbb_ccc', $result);
   }
 
@@ -214,7 +252,7 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
       'REQUEST_METHOD'=> 'POST',
     );
     $this->request->expects($this->any())->method('getServerData')->will($this->returnValue($s));
-    $this->assertSame('https://localhost/some/path.php?aaa=bbb&nkconnect_state=-1', $this->object->logoutLink());
+    $this->assertSame('https://localhost/some/path.php?aaa=bbb&nkconnect_state=logout', $this->object->logoutLink());
   }
 
   /**
@@ -224,9 +262,10 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
   {
     $ss = array(
       'nkconnect_some_key_token' => 'aaaa_bbbb_ccc',
-      'nkconnect_some_key_token_exp' => time() + 10,
+      'nkconnect_some_key_token_exp' => 100,
     );
     $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
+    $this->request->expects($this->any())->method('getTime')->will($this->returnValue(90));
 
     $this->assertSame('aaaa_bbbb_ccc', $this->object->getToken());
   }
@@ -246,9 +285,10 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
   {
     $ss = array(
       'nkconnect_some_key_token' => 'aaaa_bbbb_ccc',
-      'nkconnect_some_key_token_exp' => time() - 10,
+      'nkconnect_some_key_token_exp' => 100,
     );
     $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
+    $this->request->expects($this->any())->method('getTime')->will($this->returnValue(110));
 
     $this->assertNull($this->object->getToken());
   }
@@ -260,9 +300,10 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
   {
     $ss = array(
       'nkconnect_some_key_token' => 'aaaa_bbbb_ccc',
-      'nkconnect_some_key_token_exp' => time() + 10,
+      'nkconnect_some_key_token_exp' => 100,
     );
     $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
+    $this->request->expects($this->any())->method('getTime')->will($this->returnValue(90));
 
     $this->assertTrue($this->object->tokenAvailable());
   }
@@ -286,11 +327,32 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
   {
     $ss = array(
       'nkconnect_some_key_token' => 'aaaa_bbbb_ccc',
-      'nkconnect_some_key_token_exp' => time() - 10,
+      'nkconnect_some_key_token_exp' =>  100,
     );
     $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
+    $this->request->expects($this->any())->method('getTime')->will($this->returnValue(110));
 
     $this->assertFalse($this->object->tokenAvailable());
+  }
+
+  public function testnkConnectLoginUri()
+  {
+    $s = array(
+      'HTTPS'         => 'on',
+      'HTTP_HOST'     => 'localhost',
+      'REQUEST_URI'   => '/some/path.php?aaa=bbb',
+      'REQUEST_METHOD'=> 'GET',
+    );
+    $ss = array(
+      'nkconnect_some_key_otp' => 'aaaa_bbbb_ccc',
+    );
+
+    $this->request->expects($this->any())->method('getServerData')->will($this->returnValue($s));
+    $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
+
+    $result = $this->object->nkConnectLoginUri();
+    $this->assertSame('https://nk.pl/oauth2/login?client_id=some_key&response_type=code&redirect_uri=https%3A%2F%2Flocalhost%2Fsome%2Fpath.php%3Faaa%3Dbbb%26nkconnect_state%3Dcallback&scope=&state=aaaa_bbbb_ccc',
+                      $result);
   }
 }
 ?>

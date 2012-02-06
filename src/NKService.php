@@ -393,8 +393,7 @@ class NKService
     $length = strlen($content);
     if ($length < 1) {
       throw new NKServiceInvalidParamsException("Activity content is too short, it should have at least 1 char");
-    }
-    elseif ($length > 500) {
+    } elseif ($length > 500) {
       throw new NKServiceInvalidParamsException("Activity content is too long, it should fit in 500 chars");
     }
 
@@ -437,16 +436,14 @@ class NKService
       $body = null;
       $params = array_merge(array("nk_token" => $this->getTokenProvider()->getToken()), $params);
       $url_params = $params;
-    }
-    elseif (NKHttpClient::HTTP_POST == $method) {
+    } elseif (NKHttpClient::HTTP_POST == $method) {
       $body = json_encode($params);
       $params = array(
         "nk_token"        => $this->getTokenProvider()->getToken(),
         "oauth_body_hash" => base64_encode(hash('sha1', $body, true))
       );
       $url_params = array("nk_token"=> $this->getTokenProvider()->getToken());
-    }
-    else {
+    } else {
       throw new NKServiceInvalidParamsException("Unknown HTTP method to call");
     }
 
