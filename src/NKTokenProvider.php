@@ -24,8 +24,6 @@
  */
 interface NKTokenProvider
 {
-  const TOKEN_TTL = 900;
-
   /**
    * Metoda zwraca token lub null jeśli token nie jest dostępny
    *

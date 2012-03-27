@@ -24,6 +24,6 @@ $conf = new NKConfig();
 $conf->permissions = array(NKPermissions::BASIC_PROFILE, NKPermissions::EMAIL_PROFILE, NKPermissions::CREATE_SHOUTS);
 $conf->key = 'demo';
 $conf->secret = 'b27d8aa6-74ee-4bbc-9ea1-0a3e5acc9bb8';
-$conf->callback_url = 'http://172.19.32.1/~akurylowicz/sdk/nk-php-sdk/examples/authentication2callback.php';
+$conf->callback_url = 'http://localhost/nk-php-sdk/examples/authentication2callback.php';
 
 $db = new PDO("sqlite:authentication2.s3db", null, null, array(PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION));

@@ -63,8 +63,10 @@ class NKConnect extends NKAuthentication
   const MODE_WINDOW = 1;
   const MODE_POPUP = 2;
 
+  // @fixme: ilość sekund odejmowanych od TTLa podczas decydowania o wygaśnięciu tokena w celu wyprzedzenia odświeżenia, powinno być 2, dodatkowe 300 naprawia buga z 10m TTLem (powinien być 15m)
+  const REFRESH_AHEAD_TIME = 302;
+
   private $errors = array();
-  private $http_request;
 
   /**
    * Konstruktor, powinieneś go wywołać *zanim wyślesz* jakiekolwiek nagłówki. Konstruktor w przypadku braku sesji PHP
@@ -107,12 +109,13 @@ class NKConnect extends NKAuthentication
    */
   protected function getHttpRequest()
   {
-    if (null === $this->http_request) {
-      $this->http_request = new NKHttpRequest();
-    }
-    return $this->http_request;
+    return NKHttpRequest::singleton();
   }
 
+  /**
+   *
+   * @return NKHttpClient
+   */
   protected function getHttpClient()
   {
     return new NKHttpClient();
@@ -169,45 +172,7 @@ class NKConnect extends NKAuthentication
         return false;
       }
 
-      $http_client = $this->getHttpClient();
-
-      $url = "https://nk.pl/oauth2/token";
-      $params = array(
-        "redirect_uri" => $this->redirectUri(),
-        "scope"        => implode(',', $this->getConfig()->permissions),
-        "code"         => $req_data['code'],
-        "client_id"    => $this->getConfig()->key,
-        "client_secret"=> $this->getConfig()->secret,
-        "grant_type"   => 'authorization_code'
-      );
-
-      $http_client->exec($url, array(), NKHttpClient::HTTP_POST, $params);
-
-      if (false === in_array($http_client->getResponseCode(), array(200, 400))) {
-        $this->errors['http_error'] = 'failed to exec HTTP request when exchanging code to token';
-        return false;
-      }
-
-      $data = json_decode($http_client->getResponse(), true);
-
-      if (null === $data) {
-        $this->errors['decode_error'] = 'Unable to decode response';
-        return false;
-      }
-
-      if (true == isset($data['error'])) {
-        $this->errors[$data['error']] = isset($data['error_description']) ? $data['error_description'] : $data['error'];
-        return false;
-      }
-
-      if (false === isset($data['access_token']) || false === isset($data['expires_in'])) {
-        $this->errors['auth_error'] = 'Not authenticated';
-        return false;
-      }
-
-      $req->setSessionData($this->getSessionKey('token'), $data['access_token']);
-      $req->setSessionData($this->getSessionKey('token_exp'), ($req->getTime() + $data['expires_in']));
-
+      $this->exchangeCodeToToken($req_data['code']);
       $req->unsetSessionData($this->getSessionKey('otp'));
 
       return $this->authenticated();
@@ -218,6 +183,86 @@ class NKConnect extends NKAuthentication
     }
 
     return false;
+  }
+
+  private function exchangeCodeToToken($code)
+  {
+    $params = array(
+      "client_id"     => $this->getConfig()->key,
+      "client_secret" => $this->getConfig()->secret,
+      "grant_type"    => 'authorization_code',
+      "redirect_uri"  => $this->redirectUri(),
+      "scope"         => implode(',', $this->getConfig()->permissions),
+      "code"          => $code,
+    );
+
+    // Usuń wszystkie dane autoryzacyjne, jesli nie udało się wymienić tokena
+    if (false === ($data = $this->oauth2HttpTokenRequest($params))) {
+      $this->logout();
+      return false;
+    }
+
+    $this->getHttpRequest()
+      ->setSessionData($this->getSessionKey('token'), $data['access_token'])
+      ->setSessionData($this->getSessionKey('refresh'), $data['refresh_token'])
+      ->setSessionData($this->getSessionKey('expiry'), ($this->getHttpRequest()->getTime() + $data['expires_in']));
+
+    return true;
+  }
+
+  private function refreshToken($refresh_token)
+  {
+    $params = array(
+      "client_id"     => $this->getConfig()->key,
+      "client_secret" => $this->getConfig()->secret,
+      "grant_type"    => 'refresh_token',
+      "scope"         => implode(',', $this->getConfig()->permissions),
+      "refresh_token" => $refresh_token,
+    );
+
+    // Usuń wszystkie dane autoryzacyjne, jesli nie udało się odświeżyć tokena
+    if (false === ($data = $this->oauth2HttpTokenRequest($params))) {
+      $this->logout();
+      return false;
+    }
+
+    $this->getHttpRequest()
+      ->setSessionData($this->getSessionKey('token'), $data['access_token'])
+      ->setSessionData($this->getSessionKey('expiry'), ($this->getHttpRequest()->getTime() + $data['expires_in']));
+
+    return true;
+  }
+
+  private function oauth2HttpTokenRequest($params)
+  {
+    $url = "https://nk.pl/oauth2/token";
+
+    $http_client = $this->getHttpClient();
+    $http_client->exec($url, array(), NKHttpClient::HTTP_POST, $params);
+
+    if (false === in_array($http_client->getResponseCode(), array(200, 400))) {
+      $this->errors['http_error'] = 'failed to exec HTTP request when exchanging code to token';
+      return false;
+    }
+
+    $data = json_decode($http_client->getResponse(), true);
+
+    if (null === $data) {
+      $this->errors['decode_error'] = 'Unable to decode response';
+      return false;
+    }
+
+    if (true == isset($data['error'])) {
+      $this->errors[$data['error']] = isset($data['error_description']) ? $data['error_description'] : $data['error'];
+      return false;
+    }
+
+    if (false === isset($data['access_token']) || false === isset($data['expires_in'])) {
+      $this->errors['auth_error'] = 'Not authenticated';
+      return false;
+    }
+
+    return $data;
   }
 
   /**
@@ -240,11 +285,11 @@ class NKConnect extends NKAuthentication
    */
   public function logout()
   {
-    $req = $this->getHttpRequest();
-
-    $req->unsetSessionData($this->getSessionKey('token'));
-    $req->unsetSessionData($this->getSessionKey('token_exp'));
-    $req->unsetSessionData($this->getSessionKey('otp'));
+    $this->getHttpRequest()
+      ->unsetSessionData($this->getSessionKey('token'))
+      ->unsetSessionData($this->getSessionKey('expiry'))
+      ->unsetSessionData($this->getSessionKey('refresh'))
+      ->unsetSessionData($this->getSessionKey('otp'));
   }
 
   /**
@@ -269,15 +314,14 @@ class NKConnect extends NKAuthentication
     $req = $this->getHttpRequest();
     $session_data = $req->getSessionData();
 
-    return (isset($session_data[$this->getSessionKey('token')]) && isset($session_data[$this->getSessionKey('token_exp')]) && ($req->getTime() <= $session_data[$this->getSessionKey('token_exp')]));
-  }
+    $exists = (isset($session_data[$this->getSessionKey('token')]) && isset($session_data[$this->getSessionKey('expiry')]));
+    $not_expired = ($req->getTime() <= ($session_data[$this->getSessionKey('expiry')] - self::REFRESH_AHEAD_TIME));
 
-  private function tokenAvailableButExpired()
-  {
-    $req = $this->getHttpRequest();
-    $session_data = $req->getSessionData();
+    if (true === $exists && false === $not_expired  && true === isset($session_data[$this->getSessionKey('refresh')]) && true === $this->refreshToken($session_data[$this->getSessionKey('refresh')])) {
+      return $this->tokenAvailable();
+    }
 
-    return (isset($session_data[$this->getSessionKey('token')]) && isset($session_data[$this->getSessionKey('token_exp')]) && ($req->getTime() > $session_data[$this->getSessionKey('token_exp')]));
+    return ($exists && $not_expired);
   }
 
   private function getSessionKey($key)

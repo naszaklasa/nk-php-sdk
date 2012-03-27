@@ -1,13 +1,26 @@
 PHP SDK dla otwartego API portalu NK.pl
 =======================================
 
+Aktualna wersja to 1.2, 'master' jest gałęzią developerską, gałęzie stabilne znajdują się w branchach
+z numerami wersji.
+
 Przykłady
 ---------
 
 Przykłady użycia znajdziesz w katalogu 'examples/'
+Na stronach http://developers.nk.pl udostępniamy dokumentację zawierającą szczegółowy opis integracji.
+
+Społeczność
+---------
+
+Informacje o nowościach znajdziesz na stronie http://developers.nk.pl, oferujemy tam także support w postaci
+FAQ a także dokumentacji.
 
 Changelog
 ---------
+1.2
+
+* Dodano automatyczne odświeżanie tokena
 
 1.1
 
@@ -21,3 +34,11 @@ Changelog
 * Dostęp do danych użytkownika
 * Dostęp do galerii użytkownika
 * Dostęp do zdjęć użytkownika
+
+Testy
+---------
+
+Uruchamiaj testy używywając autoloadera:
+
+  cd nk-php-sdk/
+  phpunit -d display_errors=1 --colors --bootstrap ./src/NK.php ./tests/

@@ -27,6 +27,28 @@ class NKHttpRequest
 {
   /**
    *
+   */
+  private function __construct()
+  {
+
+  }
+
+  private static $instance;
+
+  /**
+   * @static
+   * @return NKHttpRequest
+   */
+  public static function singleton()
+  {
+    if (null === self::$instance) {
+      self::$instance = new self();
+    }
+    return self::$instance;
+  }
+
+  /**
+   *
    * @return bool
    */
   public function headersSent()

@@ -95,7 +95,7 @@ class NKService
   /**
    * Wersja nk-php-sdk
    */
-  const VERSION = '1.1';
+  const VERSION = '1.2';
 
   /**
    * Bazowy URL pod którym znajdują się serwisy wystawiane w publicznym API NK
