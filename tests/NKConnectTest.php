@@ -24,13 +24,14 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
    */
   protected function setUp()
   {
-    $this->request = $this->getMock('NKHttpRequest', array('headersSent', 'header', 'getServerData', 'getRequestData', 'startSessionIfRequired', 'getSessionData', 'setSessionData', 'unsetSessionData', 'getTime'));
+    $this->request = $this->getMock('NKHttpRequest', array('headersSent', 'header', 'getServerData', 'getRequestData', 'startSessionIfRequired', 'getSessionData', 'setSessionData', 'unsetSessionData', 'getTime'), array(), '', false);
     $this->request->expects($this->any())->method('headersSent')->will($this->returnValue(false));
 
     $this->http_client = $this->getMock('NKHttpClient', array('exec', 'getResponseCode', 'getResponse'));
 
     $c = new NKConfig();
     $c->key = 'some_key';
+    $c->secret = 'some_sectet';
 
     $this->object = $this->getMock('NKConnect', array('getConfig', 'getHttpRequest', 'getHttpClient', 'authenticated'), array(), '', false);
     $this->object->expects($this->any())->method('getConfig')->will($this->returnValue($c));
@@ -46,14 +47,24 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
   {
   }
 
-  public function testHandleCallbackNoState()
+  public function testgetError()
+  {
+
+  }
+
+  public function testgetErrors()
+  {
+
+  }
+
+  public function testHandleCallback_NoState()
   {
     $r = array();
     $this->request->expects($this->any())->method('getRequestData')->will($this->returnValue($r));
     $this->assertFalse($this->object->handleCallback());
   }
 
-  public function testHandleCallbackStatePass()
+  public function testHandleCallback_CallbackPass()
   {
     $ss = array(
       'nkconnect_some_key_otp' => 'aaaa_bbbb_ccc',
@@ -63,6 +74,11 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
       'state'           => 'aaaa_bbbb_ccc',
       'code'            => 'auth_code_1234',
     );
+    $h = array(
+      'access_token'    => 'access_token_1234',
+      'expires_in'      => 60,
+      'refresh_token'   => 'refresh_token_1234'
+    );
 
     $this->request->expects($this->any())->method('getRequestData')->will($this->returnValue($r));
     $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
@@ -70,10 +86,11 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
 
     $this->http_client->expects($this->once())->method('exec');
     $this->http_client->expects($this->once())->method('getResponseCode')->will($this->returnValue(200));
-    $this->http_client->expects($this->once())->method('getResponse')->will($this->returnValue(json_encode(array('access_token' => 'access_token_1234', 'expires_in' => 60))));
+    $this->http_client->expects($this->once())->method('getResponse')->will($this->returnValue(json_encode($h)));
 
-    $this->request->expects($this->at(3))->method('setSessionData')->with('nkconnect_some_key_token', 'access_token_1234');
-    $this->request->expects($this->at(5))->method('setSessionData')->with('nkconnect_some_key_token_exp', (10+60));     // Mock time + expires_in
+    $this->request->expects($this->at(3))->method('setSessionData')->with('nkconnect_some_key_token', 'access_token_1234')->will($this->returnValue($this->request));
+    $this->request->expects($this->at(4))->method('setSessionData')->with('nkconnect_some_key_refresh', 'refresh_token_1234')->will($this->returnValue($this->request));
+    $this->request->expects($this->at(6))->method('setSessionData')->with('nkconnect_some_key_expiry', (10+60))->will($this->returnValue($this->request));         // Mock time + expires_in
 
     $this->object->expects($this->once())->method('authenticated')->will($this->returnValue(true));
 
@@ -81,7 +98,7 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
     $this->assertSame(null, $this->object->getErrors());
   }
 
-  public function testHandleCallbackFailOtp()
+  public function testHandleCallback_FailOtp()
   {
     $ss = array(
       'nkconnect_some_key_otp' => 'aaaa_bbbb_ccc',
@@ -99,7 +116,7 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
     $this->assertArrayHasKey('invalid_otp', $this->object->getErrors());
   }
 
-  public function testHandleCallbackFailHasError()
+  public function testHandleCallback_FailHasError()
   {
     $ss = array(
       'nkconnect_some_key_otp' => 'aaaa_bbbb_ccc',
@@ -119,7 +136,7 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
     $this->assertSame('Some error description', $this->object->getError());
   }
 
-  public function testHandleCallbackFailCodeMissing()
+  public function testHandleCallback_FailCodeMissing()
   {
     $ss = array(
       'nkconnect_some_key_otp' => 'aaaa_bbbb_ccc',
@@ -136,7 +153,7 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
     $this->assertArrayHasKey('code_missing', $this->object->getErrors());
   }
 
-  public function testHandleCallbackFailHttpCodeUnknown()
+  public function testHandleCallback_FailHttpCodeUnknown()
   {
     $ss = array(
       'nkconnect_some_key_otp' => 'aaaa_bbbb_ccc',
@@ -149,16 +166,18 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
 
     $this->request->expects($this->any())->method('getRequestData')->will($this->returnValue($r));
     $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
+    $this->request->expects($this->any())->method('unsetSessionData')->will($this->returnValue($this->request));
 
     $this->http_client->expects($this->once())->method('exec');
     $this->http_client->expects($this->once())->method('getResponseCode')->will($this->returnValue(404));
 
+    $this->object->expects($this->once())->method('authenticated')->will($this->returnValue(false));
 
     $this->assertFalse($this->object->handleCallback());
     $this->assertArrayHasKey('http_error', $this->object->getErrors());
   }
 
-  public function testHandleCallbackFailHttp400()
+  public function testHandleCallback_FailHttp400()
   {
     $ss = array(
       'nkconnect_some_key_otp' => 'aaaa_bbbb_ccc',
@@ -171,17 +190,20 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
 
     $this->request->expects($this->any())->method('getRequestData')->will($this->returnValue($r));
     $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
+    $this->request->expects($this->any())->method('unsetSessionData')->will($this->returnValue($this->request));
 
     $this->http_client->expects($this->once())->method('exec');
     $this->http_client->expects($this->once())->method('getResponseCode')->will($this->returnValue(400));
     $this->http_client->expects($this->once())->method('getResponse')->will($this->returnValue(json_encode(array('error' => 'some_error', 'error_description' => 'Some error description'))));
+
+    $this->object->expects($this->once())->method('authenticated')->will($this->returnValue(false));
 
     $this->assertFalse($this->object->handleCallback());
     $this->assertArrayHasKey('some_error', $this->object->getErrors());
     $this->assertSame('Some error description', $this->object->getError());
   }
 
-  public function testHandleCallbackFailNoToken()
+  public function testHandleCallback_FailNoToken()
   {
     $ss = array(
       'nkconnect_some_key_otp' => 'aaaa_bbbb_ccc',
@@ -194,10 +216,13 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
 
     $this->request->expects($this->any())->method('getRequestData')->will($this->returnValue($r));
     $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
+    $this->request->expects($this->any())->method('unsetSessionData')->will($this->returnValue($this->request));
 
     $this->http_client->expects($this->once())->method('exec');
     $this->http_client->expects($this->once())->method('getResponseCode')->will($this->returnValue(400));
     $this->http_client->expects($this->once())->method('getResponse')->will($this->returnValue(json_encode(array())));
+
+    $this->object->expects($this->once())->method('authenticated')->will($this->returnValue(false));
 
     $this->assertFalse($this->object->handleCallback());
     $this->assertArrayHasKey('auth_error', $this->object->getErrors());
@@ -236,9 +261,10 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
    */
   public function testLogout()
   {
-    $this->request->expects($this->at(0))->method('unsetSessionData')->with('nkconnect_some_key_token');
-    $this->request->expects($this->at(1))->method('unsetSessionData')->with('nkconnect_some_key_token_exp');
-    $this->request->expects($this->at(2))->method('unsetSessionData')->with('nkconnect_some_key_otp');
+    $this->request->expects($this->at(0))->method('unsetSessionData')->with('nkconnect_some_key_token')->will($this->returnValue($this->request));
+    $this->request->expects($this->at(1))->method('unsetSessionData')->with('nkconnect_some_key_expiry')->will($this->returnValue($this->request));
+    $this->request->expects($this->at(2))->method('unsetSessionData')->with('nkconnect_some_key_refresh')->will($this->returnValue($this->request));
+    $this->request->expects($this->at(3))->method('unsetSessionData')->with('nkconnect_some_key_otp')->will($this->returnValue($this->request));
 
     $this->object->logout();
   }
@@ -258,12 +284,13 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
   /**
    *
    */
-  public function testGetTokenAvail()
+  public function testGetToken_Avail()
   {
     $ss = array(
       'nkconnect_some_key_token' => 'aaaa_bbbb_ccc',
-      'nkconnect_some_key_token_exp' => 100,
+      'nkconnect_some_key_expiry' => 900,
     );
+
     $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
     $this->request->expects($this->any())->method('getTime')->will($this->returnValue(90));
 
@@ -273,7 +300,7 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
   /**
    *
    */
-  public function testGetTokenUnavailNoSession()
+  public function testGetToken_UnavailNoSession()
   {
     $ss = array();
     $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
@@ -281,11 +308,11 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
     $this->assertNull($this->object->getToken());
   }
 
-  public function testGetTokenUnavailExpired()
+  public function testGetToken_UnavailExpiredNoRefresh()
   {
     $ss = array(
       'nkconnect_some_key_token' => 'aaaa_bbbb_ccc',
-      'nkconnect_some_key_token_exp' => 100,
+      'nkconnect_some_key_expiry' => 100,
     );
     $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
     $this->request->expects($this->any())->method('getTime')->will($this->returnValue(110));
@@ -293,14 +320,71 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
     $this->assertNull($this->object->getToken());
   }
 
+  public function testGetToken_UnavailExpiredRefreshPass()
+  {
+    $this->request->expects($this->any())->method('getTime')->will($this->returnValue(110));
+
+    $ss = array(
+      'nkconnect_some_key_token'   => 'aaaa_bbbb_ccc',
+      'nkconnect_some_key_expiry'  => 100,
+      'nkconnect_some_key_refresh' => 'dddd_eeee_fff',
+    );
+    $this->request->expects($this->at(0))->method('getSessionData')->will($this->returnValue($ss));
+
+    $h = array(
+      'access_token'    => 'aaaa_bbbb_ccc_1',
+      'expires_in'      => 900,
+    );
+    $this->http_client->expects($this->once())->method('exec');
+    $this->http_client->expects($this->once())->method('getResponseCode')->will($this->returnValue(200));
+    $this->http_client->expects($this->once())->method('getResponse')->will($this->returnValue(json_encode($h)));
+
+    $this->request->expects($this->at(2))->method('setSessionData')->with('nkconnect_some_key_token', 'aaaa_bbbb_ccc_1')->will($this->returnValue($this->request));
+    $this->request->expects($this->at(4))->method('setSessionData')->with('nkconnect_some_key_expiry', (110+900))->will($this->returnValue($this->request));         // Mock time + expires_in
+
+
+    $st = array(
+      'nkconnect_some_key_token'   => 'aaaa_bbbb_ccc_1',
+      'nkconnect_some_key_expiry'  => 900,
+      'nkconnect_some_key_refresh' => 'dddd_eeee_fff',
+    );
+    $this->request->expects($this->at(5))->method('getSessionData')->will($this->returnValue($st));
+    $this->request->expects($this->at(7))->method('getSessionData')->will($this->returnValue($st));
+
+    $this->assertSame('aaaa_bbbb_ccc_1', $this->object->getToken());
+  }
+
+  public function testGetToken_UnavailExpiredRefreshFail()
+  {
+    $this->request->expects($this->any())->method('getTime')->will($this->returnValue(110));
+
+    $ss = array(
+      'nkconnect_some_key_token'   => 'aaaa_bbbb_ccc',
+      'nkconnect_some_key_expiry'  => 100,
+      'nkconnect_some_key_refresh' => 'dddd_eeee_fff',
+    );
+    $this->request->expects($this->at(0))->method('getSessionData')->will($this->returnValue($ss));
+
+    $this->http_client->expects($this->once())->method('exec');
+    $this->http_client->expects($this->once())->method('getResponseCode')->will($this->returnValue(403));
+    $this->http_client->expects($this->never())->method('getResponse');
+
+    $this->request->expects($this->at((2)))->method('unsetSessionData')->will($this->returnValue($this->request));
+    $this->request->expects($this->at((3)))->method('unsetSessionData')->will($this->returnValue($this->request));
+    $this->request->expects($this->at((4)))->method('unsetSessionData')->will($this->returnValue($this->request));
+    $this->request->expects($this->at((5)))->method('unsetSessionData')->will($this->returnValue($this->request));
+
+    $this->assertNull($this->object->getToken());
+  }
+
   /**
    *
    */
-  public function testTokenAvailablePos()
+  public function testToken_AvailablePos()
   {
     $ss = array(
       'nkconnect_some_key_token' => 'aaaa_bbbb_ccc',
-      'nkconnect_some_key_token_exp' => 100,
+      'nkconnect_some_key_expiry' => 900,
     );
     $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
     $this->request->expects($this->any())->method('getTime')->will($this->returnValue(90));
@@ -312,7 +396,7 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
   /**
    *
    */
-  public function testTokenAvailableNegNoSession()
+  public function testToken_AvailableNegNoSession()
   {
     $ss = array();
     $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
@@ -323,11 +407,11 @@ class NKConnectTest extends PHPUnit_Framework_TestCase
   /**
    *
    */
-  public function testTokenAvailableNegExpired()
+  public function testToken_AvailableNegExpired()
   {
     $ss = array(
       'nkconnect_some_key_token' => 'aaaa_bbbb_ccc',
-      'nkconnect_some_key_token_exp' =>  100,
+      'nkconnect_some_key_expiry' =>  100,
     );
     $this->request->expects($this->any())->method('getSessionData')->will($this->returnValue($ss));
     $this->request->expects($this->any())->method('getTime')->will($this->returnValue(110));

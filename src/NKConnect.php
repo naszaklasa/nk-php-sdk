@@ -299,8 +299,12 @@ class NKConnect extends NKAuthentication
    */
   public function getToken()
   {
+    if (true !== $this->tokenAvailable()) {
+      return null;
+    }
+
     $session_data = $this->getHttpRequest()->getSessionData();
-    return $this->tokenAvailable() ? $session_data[$this->getSessionKey('token')] : null;
+    return $session_data[$this->getSessionKey('token')];
   }
 
   /**
@@ -315,7 +319,7 @@ class NKConnect extends NKAuthentication
     $session_data = $req->getSessionData();
 
     $exists = (isset($session_data[$this->getSessionKey('token')]) && isset($session_data[$this->getSessionKey('expiry')]));
-    $not_expired = ($req->getTime() <= ($session_data[$this->getSessionKey('expiry')] - self::REFRESH_AHEAD_TIME));
+    $not_expired = isset($session_data[$this->getSessionKey('expiry')]) && ($req->getTime() <= ($session_data[$this->getSessionKey('expiry')] - self::REFRESH_AHEAD_TIME));
 
     if (true === $exists && false === $not_expired  && true === isset($session_data[$this->getSessionKey('refresh')]) && true === $this->refreshToken($session_data[$this->getSessionKey('refresh')])) {
       return $this->tokenAvailable();
