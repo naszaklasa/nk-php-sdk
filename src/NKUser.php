@@ -43,6 +43,7 @@ class NKUser extends NKObject
   private $name;
   private $phoneNumber;
   private $photos = array();
+  private $profileUrl;
   private $location;
   private $birthday;
 
@@ -175,6 +176,16 @@ class NKUser extends NKObject
   }
 
   /**
+   * Url do profilu użytkownika na nk
+   *
+   * @return int
+   */
+  public function profileUrl()
+  {
+    return $this->profileUrl;
+  }
+
+  /**
    *
    * @access private
    * @param array $data
@@ -192,6 +203,11 @@ class NKUser extends NKObject
     if (isset($data['gender'])) {
       $this->gender = $data['gender'];
     }
+    
+    if (isset($data['profileUrl'])) {
+      $this->profileUrl = $data['profileUrl'];
+    }
+    
     if (isset($data['nkFriendsCount'])) {
       $this->friendsCount = $data['nkFriendsCount'];
     }
