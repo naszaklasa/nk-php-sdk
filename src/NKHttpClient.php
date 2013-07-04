@@ -45,8 +45,12 @@ class NKHttpClient
   private $curl;
   private $response;
   private $response_code = 0;
+  
+  protected function getCurl() {
+    return $this->curl;
+  }
 
-  private function initCurl()
+  protected function initCurl()
   {
     if (null === $this->curl) {
       $this->curl = curl_init();
