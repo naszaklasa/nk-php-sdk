@@ -359,6 +359,7 @@ class NKConnect extends NKAuthentication
    */
   public function button()
   {
+    $server_data = $this->getHttpRequest()->getServerData();
     $img  = (true === isset($server_data["HTTPS"]) && 'on' == $server_data["HTTPS"]) ? "https://" : "http://";
     $img .= "nk.pl/img/oauth2/connect";
 
